@@ -106,25 +106,24 @@ float getGaussianKernelSizeBySigma(float sigma) {
 }
 
 void createGaussianKernel(float outKernel[], float sigma)
-{	
+{
 	float s = 2.0 * sigma * sigma;
 	int kernelSize = getGaussianKernelSizeBySigma(sigma);
 
-    // Create Gaussian Kernel
-    int r = -sigma;
-    float sum = 0.0f;
-    for (int i = 0; i < kernelSize; i++)
-    {
+	// Create Gaussian Kernel
+	int r = -sigma;
+	float sum = 0.0f;
+	for (int i = 0; i < kernelSize; i++) {
 		float x = r;
-        float v = (exp(-(x*x) / s)) / (sqrt(2.0 * M_PI) * sigma);
-        outKernel[i] = v;
-           
-        sum+=v;
-        r++;
-    }
+		float v = (exp(-(x * x) / s)) / (sqrt(2.0 * M_PI) * sigma);
+		outKernel[i] = v;
 
-    // Normalize distribution
-    float div = sum;
+		sum += v;
+		r++;
+	}
+
+	// Normalize distribution
+	float div = sum;
 	for (int i = 0; i < kernelSize; i++) {
 		outKernel[i] /= div;
 	}
@@ -221,7 +220,7 @@ int main() {
 	checkStatus(status);
 
 	// allocate two input and one output buffer for the three vectors
-	cl_mem bufferIn = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &status);	
+	cl_mem bufferIn = clCreateBuffer(context, CL_MEM_READ_ONLY, dataSize, NULL, &status);
 	checkStatus(status);
 	cl_mem bufferKernel = clCreateBuffer(context, CL_MEM_READ_ONLY, kernelDataSize, NULL, &status);
 	checkStatus(status);
@@ -264,8 +263,6 @@ int main() {
 	size_t* maxWorkItemSizes = static_cast<size_t*>(malloc(maxWorkItemDimensions * sizeof(size_t)));
 	checkStatus(clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_ITEM_SIZES, maxWorkItemDimensions * sizeof(size_t), maxWorkItemSizes, NULL));
 
-	printf("%zu x %zu", maxWorkItemSizes[0], maxWorkItemSizes[1]);
-
 	if (image->width > maxWorkItemSizes[0] || image->height > maxWorkItemSizes[1])
 	{
 		printf("Error: Too many elements to process - maximum elements allowed: %zu pixel width and %zu pixel height\n", maxWorkItemSizes[0], maxWorkItemSizes[1]);
@@ -274,42 +271,45 @@ int main() {
 
 	free(maxWorkItemSizes);
 	size_t globalWorkSize[2] = { static_cast<size_t>(image->width), static_cast<size_t>(image->height) };
+	size_t localWorkSize[2] = { 16, 16 };
 
 	// create the gaussian blur kernel
 	cl_kernel kernel = clCreateKernel(program, "gaussian_blur", &status);
 	checkStatus(status);
 
 	// set the kernel arguments
-	cl_short isXAxis = 0;
+	cl_short isXAxis = 1;
 	checkStatus(clSetKernelArg(kernel, 0, sizeof(cl_mem), &bufferIn));
-	checkStatus(clSetKernelArg(kernel, 1, sizeof(unsigned int), &(image->width)));
-	checkStatus(clSetKernelArg(kernel, 2, sizeof(unsigned int), &(image->height)));
-	checkStatus(clSetKernelArg(kernel, 3, sizeof(cl_mem), &bufferKernel));
-	checkStatus(clSetKernelArg(kernel, 4, sizeof(const unsigned int), &(kernelSize)));
-	checkStatus(clSetKernelArg(kernel, 5, sizeof(unsigned short), &isXAxis));
-	checkStatus(clSetKernelArg(kernel, 6, sizeof(cl_mem), &bufferOut));
+	checkStatus(clSetKernelArg(kernel, 1, 4 * sizeof(float) * (localWorkSize[0] + (kernelSize - 1)) * (localWorkSize[1] + (kernelSize - 1)), 0));
+	checkStatus(clSetKernelArg(kernel, 2, sizeof(unsigned int), &(image->width)));
+	checkStatus(clSetKernelArg(kernel, 3, sizeof(unsigned int), &(image->height)));
+	checkStatus(clSetKernelArg(kernel, 4, sizeof(cl_mem), &bufferKernel));
+	checkStatus(clSetKernelArg(kernel, 5, sizeof(const unsigned int), &(kernelSize)));
+	checkStatus(clSetKernelArg(kernel, 6, sizeof(unsigned short), &isXAxis));
+	checkStatus(clSetKernelArg(kernel, 7, sizeof(cl_mem), &bufferOut));
 
 	// execute the kernel
-	checkStatus(clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, NULL, 0, NULL, NULL));
+	checkStatus(clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL));
 
 	// read the device output buffer to the host output array
 	checkStatus(clEnqueueReadBuffer(commandQueue, bufferOut, CL_TRUE, 0, dataSize, vectorOut, 0, NULL, NULL));
-	
+
 	// write data from the out vector to the buffer to be able to run the kernel again in the other direction
 	checkStatus(clEnqueueWriteBuffer(commandQueue, bufferIn, CL_TRUE, 0, dataSize, vectorOut, 0, NULL, NULL));
 
 	// set the kernel arguments
 	isXAxis = 1;
 	checkStatus(clSetKernelArg(kernel, 0, sizeof(cl_mem), &bufferIn));
-	checkStatus(clSetKernelArg(kernel, 1, sizeof(unsigned int), &(image->width)));
-	checkStatus(clSetKernelArg(kernel, 2, sizeof(unsigned int), &(image->height)));
-	checkStatus(clSetKernelArg(kernel, 3, sizeof(cl_mem), &bufferKernel));
-	checkStatus(clSetKernelArg(kernel, 4, sizeof(const unsigned int), &(kernelSize)));
-	checkStatus(clSetKernelArg(kernel, 5, sizeof(unsigned short), &isXAxis));
-	checkStatus(clSetKernelArg(kernel, 6, sizeof(cl_mem), &bufferOut));
+	checkStatus(clSetKernelArg(kernel, 1, 4 * sizeof(float) * (localWorkSize[0] + (kernelSize - 1)) * (localWorkSize[1] + (kernelSize - 1)), 0));
+	checkStatus(clSetKernelArg(kernel, 2, sizeof(unsigned int), &(image->width)));
+	checkStatus(clSetKernelArg(kernel, 3, sizeof(unsigned int), &(image->height)));
+	checkStatus(clSetKernelArg(kernel, 4, sizeof(cl_mem), &bufferKernel));
+	checkStatus(clSetKernelArg(kernel, 5, sizeof(const unsigned int), &(kernelSize)));
+	checkStatus(clSetKernelArg(kernel, 6, sizeof(unsigned short), &isXAxis));
+	checkStatus(clSetKernelArg(kernel, 7, sizeof(cl_mem), &bufferOut));
 
 	// execute the kernel
-	checkStatus(clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, NULL, 0, NULL, NULL));
+	checkStatus(clEnqueueNDRangeKernel(commandQueue, kernel, 2, NULL, globalWorkSize, localWorkSize, 0, NULL, NULL));
 
 	// read the device output buffer to the host output array
 	checkStatus(clEnqueueReadBuffer(commandQueue, bufferOut, CL_TRUE, 0, dataSize, vectorOut, 0, NULL, NULL));
